@@ -1,0 +1,18 @@
+[package]
+name = "bevy_gltf_tags"
+version = "0.1.0"
+edition = "2024"
+description = "Generic glTF extras tag actions for Bevy, with a companion Blender add-on."
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+bevy_render = "0.19"
+bevy_gltf = "0.19"
+bevy_app = "0.19"
+bevy_ecs = "0.19"
+bevy_world_serialization = "0.19"
+serde_json = "*"
+
+[dev-dependencies]
+bevy_asset = "0.19"
+bevy_mesh = "0.19"

@@ -1,0 +1,12 @@
+{
+  "format": "generic-object-tags",
+  "version": 1,
+  "tags": [
+    "interaction/clickable",
+    "physics/collider",
+    "physics/dynamic",
+    "physics/sensor",
+    "physics/static",
+    "spawn/player"
+  ]
+}

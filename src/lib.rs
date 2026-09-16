@@ -59,8 +59,8 @@ use std::{collections::HashMap, hash::Hash, sync::Arc};
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use bevy_gltf::GltfExtras;
+use bevy_scene::{SceneInstanceReady, SceneSpawner};
 
-use bevy_world_serialization::{WorldInstanceReady, WorldInstanceSpawner};
 use serde_json::Value;
 
 /// Bevy plugin that enables tag-action callbacks for glTF extras.
@@ -484,10 +484,10 @@ fn apply_tag_actions(
 }
 
 fn apply_tagged_scene_actions(
-    ready: On<WorldInstanceReady>,
+    ready: On<SceneInstanceReady>,
     mut commands: Commands,
     actions: Res<TaggedSceneActions>,
-    spawner: Res<WorldInstanceSpawner>,
+    spawner: Res<SceneSpawner>,
     names: Query<&Name>,
     extras: Query<&GltfExtras>,
 ) {

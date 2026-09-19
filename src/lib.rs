@@ -7,9 +7,10 @@
 //!
 //! * Blender stores tags as custom properties under the key `tags`.
 //! * The glTF exporter writes those custom properties into glTF `extras`.
-//! * Bevy's glTF loader exposes those extras as [`GltfExtras`].
-//! * This plugin observes newly-added [`GltfExtras`] components, parses any
-//!   tags, and runs callbacks registered by tag key.
+//! * Bevy's glTF loader exposes node/primitive extras as [`GltfExtras`] and mesh
+//!   data-block extras as [`GltfMeshExtras`].
+//! * This plugin observes newly-added extras components, parses any tags, and
+//!   runs callbacks registered by tag key.
 //! * Whole scene instance callbacks can inspect an index of the names and tags
 //!   in one spawned glTF/WorldAsset instance.
 //!
@@ -18,9 +19,10 @@
 //! * `some/key`
 //! * `some/key=value`
 //!
-//! The callback receives the Bevy [`Entity`] that owns the [`GltfExtras`], the
-//! optional string value, and [`Commands`]. There is no built-in coupling to a
-//! gameplay component type, physics crate, or asset convention.
+//! The callback receives the Bevy [`Entity`] that owns the [`GltfExtras`] or
+//! [`GltfMeshExtras`], the optional string value, and [`Commands`]. There is no
+//! built-in coupling to a gameplay component type, physics crate, or asset
+//! convention.
 //!
 //! # Object Tags vs Mesh Tags
 //!
@@ -58,16 +60,17 @@ use std::{collections::HashMap, hash::Hash, sync::Arc};
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
-use bevy_gltf::GltfExtras;
+use bevy_gltf::{GltfExtras, GltfMeshExtras};
 
 use bevy_world_serialization::{WorldInstanceReady, WorldInstanceSpawner};
 use serde_json::Value;
 
 /// Bevy plugin that enables tag-action callbacks for glTF extras.
 ///
-/// The plugin registers a lifecycle observer for `Add<GltfExtras>`, so there is
-/// no per-frame query scanning for newly-added extras. The work happens when the
-/// component is inserted by Bevy's glTF scene spawning machinery.
+/// The plugin registers lifecycle observers for `Add<GltfExtras>` and
+/// `Add<GltfMeshExtras>`, so there is no per-frame query scanning for newly-added
+/// extras. The work happens when the components are inserted by Bevy's glTF
+/// scene spawning machinery.
 pub struct ObjectTagsPlugin;
 
 impl Plugin for ObjectTagsPlugin {
@@ -75,6 +78,7 @@ impl Plugin for ObjectTagsPlugin {
         app.init_resource::<TagActions>()
             .init_resource::<TaggedSceneActions>()
             .add_observer(apply_tag_actions)
+            .add_observer(apply_mesh_tag_actions)
             .add_observer(apply_tagged_scene_actions);
     }
 }
@@ -316,7 +320,7 @@ impl TaggedScene {
         root: Option<Entity>,
         entities: Vec<Entity>,
         names: &Query<&Name>,
-        extras: &Query<&GltfExtras>,
+        extras: &Query<(Option<&GltfExtras>, Option<&GltfMeshExtras>)>,
     ) -> Self {
         Self::from_entities(
             root,
@@ -325,7 +329,9 @@ impl TaggedScene {
             |entity| {
                 extras
                     .get(entity)
-                    .map(|extras| tags_from_gltf_extras(&extras.value))
+                    .map(|(node_extras, mesh_extras)| {
+                        tags_from_components(node_extras, mesh_extras)
+                    })
                     .unwrap_or_default()
             },
         )
@@ -416,7 +422,7 @@ pub fn parse_tag(tag: &str) -> Option<ParsedTag> {
     })
 }
 
-/// Extract tags from a Bevy [`GltfExtras`] JSON string.
+/// Extract tags from a Bevy [`GltfExtras`] or [`GltfMeshExtras`] JSON string.
 ///
 /// Blender exports custom properties as JSON object members. For this add-on,
 /// the relevant member is `tags`.
@@ -460,6 +466,18 @@ pub fn tags_from_gltf_extras(extras: &str) -> Vec<ParsedTag> {
     raw_tags.iter().filter_map(|tag| parse_tag(tag)).collect()
 }
 
+fn tags_from_components(
+    node_extras: Option<&GltfExtras>,
+    mesh_extras: Option<&GltfMeshExtras>,
+) -> Vec<ParsedTag> {
+    node_extras
+        .into_iter()
+        .map(|extras| extras.value.as_str())
+        .chain(mesh_extras.into_iter().map(|extras| extras.value.as_str()))
+        .flat_map(tags_from_gltf_extras)
+        .collect()
+}
+
 fn apply_tag_actions(
     add: On<Add, GltfExtras>,
     mut commands: Commands,
@@ -474,11 +492,34 @@ fn apply_tag_actions(
         return;
     };
 
-    for tag in tags_from_gltf_extras(&extras.value) {
+    dispatch_tag_actions(entity, &extras.value, &actions, &mut commands);
+}
+
+fn apply_mesh_tag_actions(
+    add: On<Add, GltfMeshExtras>,
+    mut commands: Commands,
+    actions: Res<TagActions>,
+    extras: Query<&GltfMeshExtras>,
+) {
+    let entity = add.entity;
+    let Ok(extras) = extras.get(entity) else {
+        return;
+    };
+
+    dispatch_tag_actions(entity, &extras.value, &actions, &mut commands);
+}
+
+fn dispatch_tag_actions(
+    entity: Entity,
+    extras: &str,
+    actions: &TagActions,
+    commands: &mut Commands,
+) {
+    for tag in tags_from_gltf_extras(extras) {
         if let Some(action) = actions.actions.get(&tag.key) {
             // Clone-free dispatch: each parsed tag is owned, so the optional
             // value can move into the user's callback.
-            action(entity, tag.value, &mut commands);
+            action(entity, tag.value, commands);
         }
     }
 }
@@ -489,7 +530,7 @@ fn apply_tagged_scene_actions(
     actions: Res<TaggedSceneActions>,
     spawner: Res<WorldInstanceSpawner>,
     names: Query<&Name>,
-    extras: Query<&GltfExtras>,
+    extras: Query<(Option<&GltfExtras>, Option<&GltfMeshExtras>)>,
 ) {
     if actions.is_empty() {
         return;
@@ -535,7 +576,7 @@ mod tests {
             .world_mut()
             .spawn((
                 Name::new("ArcNode"),
-                GltfExtras {
+                GltfMeshExtras {
                     value: r#"{"tags":["arc/target=main"]}"#.into(),
                 },
             ))
@@ -550,10 +591,10 @@ mod tests {
                     .map(|name| name.as_str().to_owned())
             },
             |entity| {
-                app.world()
-                    .get::<GltfExtras>(entity)
-                    .map(|extras| tags_from_gltf_extras(&extras.value))
-                    .unwrap_or_default()
+                tags_from_components(
+                    app.world().get::<GltfExtras>(entity),
+                    app.world().get::<GltfMeshExtras>(entity),
+                )
             },
         );
 
@@ -666,8 +707,9 @@ mod tests {
 
     #[test]
     fn action_on_mesh_tag_receives_mesh_entity() {
-        // Mesh data-block tags are expected to arrive on the render mesh entity,
-        // making mesh-oriented actions like collider construction direct.
+        // Bevy 0.19 represents glTF mesh-level extras with GltfMeshExtras, not
+        // GltfExtras. Keep this faithful to the component inserted by the real
+        // loader so the observer contract cannot accidentally regress.
         let mut app = App::new();
         app.add_plugins(ObjectTagsPlugin).tag_action(
             "physics/collider",
@@ -679,7 +721,7 @@ mod tests {
         let mesh = app
             .world_mut()
             .spawn((
-                GltfExtras {
+                GltfMeshExtras {
                     value: r#"{"tags":["physics/collider=convex"]}"#.into(),
                 },
                 Mesh3d(Handle::default()),
@@ -695,6 +737,50 @@ mod tests {
                 .map(|marker| marker.0.as_deref()),
             Some(Some("convex"))
         );
+    }
+
+    #[test]
+    fn test_level_mesh_extras_trigger_actions() {
+        // Recreate the components Bevy 0.19's glTF loader inserts for each mesh
+        // in the real fixture. This keeps the regression test deterministic and
+        // synchronous while exercising the plugin's actual Add observer.
+        let root = glb_json("assets/gltfs/test_level.glb");
+        let meshes = root
+            .get("meshes")
+            .and_then(Value::as_array)
+            .expect("test level should contain meshes");
+
+        let mut app = App::new();
+        app.add_plugins(ObjectTagsPlugin).tag_action(
+            "physics/coll_simple_cube",
+            |entity, value, commands| {
+                commands.entity(entity).insert(TaggedMarker(value));
+            },
+        );
+
+        let mut mesh_entities = Vec::new();
+        for mesh in meshes {
+            let extras = mesh
+                .get("extras")
+                .and_then(|extras| serde_json::to_string(extras).ok())
+                .expect("each test-level mesh should have extras");
+
+            mesh_entities.push(
+                app.world_mut()
+                    .spawn((GltfMeshExtras { value: extras }, Mesh3d(Handle::default())))
+                    .id(),
+            );
+        }
+
+        app.update();
+
+        assert!(!mesh_entities.is_empty());
+        for entity in mesh_entities {
+            assert!(
+                app.world().entity(entity).contains::<TaggedMarker>(),
+                "mesh-level tag action should run for {entity}"
+            );
+        }
     }
 
     #[test]

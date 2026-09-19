@@ -10,9 +10,10 @@ authoring those tags as glTF `extras`.
    `tagged_scene_action`.
 
 > [!IMPORTANT]
-> Object tags land on glTF node entities. Mesh data-block tags land on the
-> rendered mesh entities Bevy creates for mesh/material data. If you want to work with
-> an object's mesh and material, use tags on the mesh data block!
+> Object tags land on glTF node entities as `GltfExtras`. Mesh data-block tags
+> land on the rendered mesh entities Bevy creates for mesh/material data as
+> `GltfMeshExtras`. If you want to work with an object's mesh and material, use
+> tags on the mesh data block!
 
 ```rust
 use bevy::prelude::*;

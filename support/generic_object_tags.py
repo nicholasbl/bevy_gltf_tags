@@ -457,8 +457,7 @@ def draw_export_warning(layout):
     exporter state because those settings are not consistently scriptable.
     """
     box = layout.box()
-    box.alert = True
-    box.label(text="Enable glTF Custom Properties", icon='ERROR')
+    box.label(text="Enable glTF Custom Properties", icon='HELP')
     box.label(text="Export dialog: Include > Custom Properties")
     box.label(text="Also enable it on collection exporters")
 

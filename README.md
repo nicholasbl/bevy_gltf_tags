@@ -11,8 +11,10 @@ The workflow is intentionally small:
 4. Add `ObjectTagsPlugin` in Bevy and register callbacks with `tag_action` or
    `tagged_scene_action`.
 
-Object tags land on glTF node entities. Mesh data-block tags land on the
-rendered mesh entities Bevy creates for mesh/material data.
+Object tags land on glTF node entities as `GltfExtras`. Mesh data-block tags
+land on the rendered mesh entities Bevy creates for mesh/material data as
+`GltfMeshExtras`. If you want to work with an object's mesh and material, use
+tags on the mesh data block!
 
 ```rust
 use bevy::prelude::*;

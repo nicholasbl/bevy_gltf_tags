@@ -19,7 +19,8 @@ The core idea is:
 
 * Artists/designers add simple string tags in Blender.
 * Blender exports those tags as glTF `extras`.
-* Bevy reads `GltfExtras` and invokes user-registered Rust callbacks.
+* Bevy reads node `GltfExtras` and mesh `GltfMeshExtras`, then invokes
+  user-registered Rust callbacks.
 
 The add-on stores tags in Blender custom properties under the key `tags`.
 Blender's glTF exporter can copy custom properties into glTF `extras`, but only
